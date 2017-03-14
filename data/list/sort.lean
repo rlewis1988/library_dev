@@ -339,7 +339,7 @@ well_founded.fix (inv_image.wf _ nat.lt_wf) perm_merge_sort.F
 section total_and_transitive
 variables (totr : total r) (transr : transitive r)
 include totr transr
-
+exit
 private def sorted_merge.F :
   Π p : list α × list α,
       (Π p₁ : list α × list α, length p₁.1 + length p₁.2 < length p.1 + length p.2 →
