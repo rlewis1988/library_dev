@@ -129,24 +129,24 @@ theorem sorted_ordered_insert (a : α) : ∀ l, sorted r l → sorted r (ordered
   if h' : a ≼ b then
     begin
       simp [ordered_insert, if_pos, h'],
-      have ∀ c ∈ b :: l, a ≼ c, from
+      have ∀ c ∈ b :: l, r a c, from
         take c, suppose c ∈ b :: l,
         or.elim (eq_or_mem_of_mem_cons this)
-          (suppose c = b, this^.symm ▸ ‹a ≼ b›)
-          (suppose c ∈ l, transr ‹a ≼ b› (h₀ _ this)),
+          (suppose c = b, this^.symm ▸ ‹r a b›)
+          (suppose c ∈ l, transr ‹r a b› (h₀ _ this)),
       show sorted r (a :: b :: l), from sorted_cons r h this
    end
   else
     have b ≼ a, from or.resolve_left (totr a b) h',
     begin
-      simp [ordered_insert, if_neg, ‹¬ a ≼ b›],
+      simp [ordered_insert, if_neg, ‹¬ r a b›],
       have h₁ : sorted r (ordered_insert r a l), from sorted_ordered_insert l ‹sorted r l›,
-      have h₂ : ∀ c ∈ ordered_insert r a l, b ≼ c, from
+      have h₂ : ∀ c ∈ ordered_insert r a l, r b c, from
         take c,
         suppose c ∈ ordered_insert r a l,
         have c ∈ a  :: l, from (mem_ordered_insert_iff r c a l)^.mp this,
         or.elim (eq_or_mem_of_mem_cons this)
-          (suppose c = a, begin rw this, exact ‹b ≼ a› end)
+          (suppose c = a, begin rw this, exact ‹r b a› end)
           (suppose c ∈ l, h₀ c this),
       show sorted r (b :: ordered_insert r a l), from sorted_cons r h₁ h₂
     end
@@ -358,16 +358,16 @@ private def sorted_merge.F :
       note hrec := f (l, b :: l') begin simp, apply nat.le_refl end,
       simp [if_pos, h],
       have h₃ : sorted r (merge r (l, b :: l')), from hrec ‹sorted r l› h₂,
-      have h₄ : ∀ c ∈ merge r (l, b :: l'), a ≼ c,
+      have h₄ : ∀ c ∈ merge r (l, b :: l'), r a c,
       begin
         intros c hc,
         rw mem_merge_iff at hc,
         exact or.elim hc
-          (suppose c ∈ l, show a ≼ c, from h₁₀ c this)
+          (suppose c ∈ l, show r a c, from h₁₀ c this)
           (suppose c ∈ b :: l',
             or.elim (eq_or_mem_of_mem_cons this)
-              (suppose c = b, show a ≼ c, from this^.symm ▸ ‹a ≼ b›)
-              (suppose c ∈ l', show a ≼ c, from transr ‹a ≼ b› (h₂₀ c this)))
+              (suppose c = b, show r a c, from this^.symm ▸ ‹r a b›)
+              (suppose c ∈ l', show r a c, from transr ‹r a b› (h₂₀ c this)))
       end,
       show sorted r (a :: merge r (l, b :: l')), from sorted_cons r h₃ h₄
     end
@@ -377,16 +377,16 @@ private def sorted_merge.F :
       note hrec := f (a :: l, l') begin simp, apply nat.le_refl end,
       simp [if_neg, h],
       have h₃ : sorted r (merge r (a :: l, l')), from hrec h₁ ‹sorted r l'›,
-      have h₄ : ∀ c ∈ merge r (a :: l, l'), b ≼ c,
+      have h₄ : ∀ c ∈ merge r (a :: l, l'), r b c,
       begin
         intros c hc,
         rw mem_merge_iff at hc,
         exact or.elim hc
           (suppose c ∈ a :: l,
             or.elim (eq_or_mem_of_mem_cons this)
-              (suppose c = a, show b ≼ c, from this^.symm ▸ ‹b ≼ a›)
-              (suppose c ∈ l, show b ≼ c, from transr ‹b ≼ a› (h₁₀ c this)))
-          (suppose c ∈ l', show b ≼ c, from h₂₀ c this)
+              (suppose c = a, show r b c, from this^.symm ▸ ‹r b a›)
+              (suppose c ∈ l, show r b c, from transr ‹r b a› (h₁₀ c this)))
+          (suppose c ∈ l', show r b c, from h₂₀ c this)
       end,
       show sorted r (b :: merge r (a :: l, l')), from sorted_cons r h₃ h₄
     end
