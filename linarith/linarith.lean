@@ -1,33 +1,28 @@
-import ..data.list.basic .matrix .order .comp_val ..data.fin ..data.int.basic init.meta.mathematica ..tools.auto.mk_inhabitant init.meta.smt.smt_tactic
-open expr tactic nat rb_map
+/-
+Copyright (c) 2017 Robert Y. Lewis. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Author: Robert Y. Lewis
+-/
+
+import ..data.list.basic .matrix ..algebra.order .comp_val ..data.fin ..data.int.basic init.meta.mathematica ..tools.auto.mk_inhabitant init.meta.smt.smt_tactic .and_of_map
+open expr tactic rb_map
 
 def linarith_path := "~/lean/lean/extras/mathematica/linarith.m"
 --"c:/msys64/home/robyl/lean/lean/extras/mathematica/linarith.m"
 
---meta def rb_map_union  {key : Type} {data : Type} (m1 m2 : rb_map key data) : rb_map key data :=
---fold m1 m2 (λ k d m, insert m k d)
-
-meta def is_num' : expr → bool :=  λ t, tt
-
-
---meta def is_num : expr → bool := λ t, --tt
---is_app_of t `zero || is_app_of t `one || is_app_of t `bit0 || is_app_of t `bit1
-
 meta def find_vars_aux2 : expr → rb_map expr unit
 | (app (app (app (app (const ``add _) _) _) u) v) := union (find_vars_aux2 u) (find_vars_aux2 v)
 | (app (app (app (app (const ``mul _) _) _) u) v) :=
-  if (is_num' u) then insert (mk _ _) v unit.star else mk _ _
+  if (is_signed_num u) then insert (mk _ _) v unit.star else mk _ _
 | _ := mk _ _
 
 meta def find_vars (l : list expr) : rb_map expr unit :=
 list.foldr (λ e m, union m (find_vars_aux2 e)) (mk _ _) l
 
--- the order of the resulting list isn't deterministic
-
 meta def mk_var_map : expr → rb_map expr expr
 | (app (app (app (app (const ``add _) _) _) u) v) := union (mk_var_map u) (mk_var_map v)
 | (app (app (app (app (const ``mul _) _) _) u) v) :=
-  if (is_num' u) then insert (mk _ _) v u else mk _ _
+  if (is_signed_num u) then insert (mk _ _) v u else mk _ _
 | _ := mk _ _
 
 meta def sum_eq_aux (m : rb_map expr expr) (e z : expr) : expr :=
@@ -39,33 +34,29 @@ end
 meta def sum_with_zeros_aux (e z : expr) : list expr → tactic expr
 | []       := return z
 | [h]      :=
- let var_to_coeff := mk_var_map e, coeff := sum_eq_aux var_to_coeff h z in do
- mk_app `mul [coeff, h]
+  let var_to_coeff := mk_var_map e, coeff := sum_eq_aux var_to_coeff h z in
+  mk_app `mul [coeff, h]
 | (h :: t) :=
- let var_to_coeff := mk_var_map e, coeff := sum_eq_aux var_to_coeff h z in do
- prod ← mk_app `mul [coeff, h],
- sum ← sum_with_zeros_aux t,
- mk_app `add [prod, sum]
+  let var_to_coeff := mk_var_map e, coeff := sum_eq_aux var_to_coeff h z in 
+  do prod ← mk_app `mul [coeff, h],
+     sum ← sum_with_zeros_aux t,
+     mk_app `add [prod, sum]
 
-meta def sum_with_zeros (e : expr) (l : list expr) : tactic expr := do
- etp ← infer_type e,
- ez ← to_expr `((0 : %%etp)),
- sum_with_zeros_aux e ez l
-
-
--- e is a sum, l is a list of variables that includes all the ones in e.
--- returns a proof that e is equal to the sum over l with the right coeffs
+meta def sum_with_zeros (e : expr) (l : list expr) : tactic expr := 
+do etp ← infer_type e,
+   ez ← to_expr `((0 : %%etp)),
+   sum_with_zeros_aux e ez l
+#check lt_succ_of_lt
+/--
+  e is a sum (a*x + b*y + ...)
+  l is a list of variables that includes all variables in e
+  returns a proof that e is equal to the sum over l, with 0 coeffs inserted where needed
+-/
 meta def sum_eq_sum_with_zeros (e : expr) (l : list expr) : tactic (expr × expr) := do
  sum ← sum_with_zeros e l,
- lms ← simp_lemmas.mk_default,
- esimpe ← simplify_core {} lms `eq e,
- ssimpe ← simplify_core {} lms `eq sum,
- match (esimpe, ssimpe) with
- | ((esimped, esimpedpr), (ssimped, ssimpedpr)) := do
-   eqpr1 ← mk_app `eq.symm [ssimpedpr],
-   eqpr ← mk_app `eq.trans [esimpedpr, eqpr1],
-   return (sum, eqpr)
- end
+ eqp ← to_expr `(%%e = %%sum),
+ eqpr ← mk_inhabitant_using eqp simp,
+ return (sum, eqpr)
 
 attribute [simp] zero_mul add_zero add_assoc --mul_comm
 
@@ -79,10 +70,10 @@ let mv := mk_var_map e in
 meta def coeff_matrix (l : list expr) (vars : list expr) : tactic (list (list expr)) :=
  match l with
  | [] := failed
- | (h :: t) := do
-  tp ← infer_type h,
-  zr ← to_expr `((0 : %%tp)),
- return (list.map (λ e, coeff_matrix_aux e zr vars) l)
+ | (h :: t) := 
+   do tp ← infer_type h,
+      zr ← to_expr `((0 : %%tp)),
+      return $ l^.map (λ e, coeff_matrix_aux e zr vars)
  end
 
 def bool_filter {α : Type} (P : α → bool) : list α → list α
@@ -107,9 +98,10 @@ end
 
 meta def sep_lin_hyps : list expr → list expr × list expr
 | [] := ([], [])
-| (h :: t) := match (sep_lin_hyp h, sep_lin_hyps t) with
- | ((e1, e2), (l1, l2)) := (e1::l1, e2::l2)
-end
+| (h :: t) := 
+  match (sep_lin_hyp h, sep_lin_hyps t) with
+  | ((e1, e2), (l1, l2)) := (e1::l1, e2::l2)
+  end
 
 meta def find_vars_in_comps (l : list expr) : rb_map expr unit :=
 let (lhss, rhss) := sep_lin_hyps l in
@@ -119,9 +111,9 @@ union (find_vars lhss) (find_vars rhss)
 -- returns a pair of a matrix and a vector: eg A, b st A x ≤ b
 meta def create_farkas_matrix (l : list expr) (vars : list expr) : tactic (list (list expr) × list expr) :=
 match sep_lin_hyps l with
-| (sums, vals) := do
- cf ← coeff_matrix sums vars,
- return (cf, vals)
+| (sums, vals) := 
+  do cf ← coeff_matrix sums vars,
+  return (cf, vals)
 end
 
 
@@ -133,13 +125,13 @@ def vec_prod {A : Type} [semiring A] : list A → list A → A
 | _ _ := 0
 
 def mat_prod {A : Type} [semiring A] (mat : list (list A)) (vec : list A) : list A :=
-list.map (λ row, vec_prod row vec) mat
+mat^.map (λ row, vec_prod row vec)
 
 lemma subst_helper {A : Type} {m n o : A} {R : A → A → Prop} (H1 : m = n) (H2 : R m o) : R n o :=
 eq.subst H1 H2
 
 meta def flatten_expr_list : list expr → tactic expr
-| [] := do trace "blah", failed
+| [] := failed
 | [h] := to_expr `([ %%h ])
 | (h :: t) := do fl ← flatten_expr_list t, mk_app ``list.cons [h, fl]
 
@@ -154,23 +146,17 @@ meta def flatten_matrix : list (list expr) → tactic expr
 meta def expand_ineq_proof (e : expr) (l : list expr) : tactic expr :=
 do etp ← infer_type e,
 match sep_lin_hyp_with_rel etp with
-| (R, t, c) := do
-  tp ← infer_type t,
-  zr ← to_expr `((0 : %%tp)),
-  coeffs ← flatten_expr_list $ coeff_matrix_aux t zr l,
-  vars ← flatten_expr_list l,
-  vpr ← mk_app `vec_prod [coeffs, vars],
-  sumpr ← sum_eq_sum_with_zeros t l,
-  match sumpr with
-  | (_, prf) := do pt ← infer_type prf, et ← infer_type e,  mk_app ``subst_helper [prf, e]
-  end
+| (R, t, c) := 
+  do tp ← infer_type t,
+     zr ← to_expr `((0 : %%tp)),
+     coeffs ← flatten_expr_list $ coeff_matrix_aux t zr l,
+     vars ← flatten_expr_list l,
+     vpr ← mk_app `vec_prod [coeffs, vars],
+     sumpr ← sum_eq_sum_with_zeros t l,
+     match sumpr with
+     | (_, prf) := do pt ← infer_type prf, et ← infer_type e,  mk_app ``subst_helper [prf, e]
+     end
 end
-
-meta def tactic_map {α β : Type} (f : α → tactic β) : (list α) → tactic (list β)
-| [] := return []
-| (h :: t) := do fh ← f h, ft ← tactic_map t, return (fh :: ft)
-
-
 
 meta def fold_intros : expr → list expr → tactic expr
 | dft [] := return dft
@@ -182,64 +168,26 @@ meta def fold_intros : expr → list expr → tactic expr
 meta def make_mat_eq_prf : tactic unit := do
  dunfold [`r_ith, `rvector_of_list, `matrix_of_list_of_lists, `mul, `r_ith],
  dsimp,
- --trace_state,
  (lhs, rhs) ← target >>= match_eq,
  (lhsv, lhsp) ← norm_num lhs,
  (rhsv, rhsp) ← norm_num rhs,
  to_expr `(eq.trans %%lhsp (eq.symm %%rhsp)) >>= apply
 
+meta def make_and (e : expr) : tactic expr :=
+do m1 ← mk_mvar, m2 ← mk_mvar, m3 ← mk_mvar, m4 ← mk_mvar,
+   to_expr `(@eq %%m3 %%m1 (@zero %%m3 %%m4) ∧ %%m2) >>= unify e,
+   to_expr `(%%m1 = 0 ∧ %%m2)
 
---lemma foo (P : fin 2 → Prop)  (h1 : P ⟨0, dec_trivial⟩) (h2 : P ⟨1, dec_trivial⟩) : ∀ i : fin 2, P i := sorry
-/-begin
-intros h1 h2 i,
-induction i,
-induction val,
-assumption,
-induction a,
-assumption,
-induction is_lt,
-end-/
+meta def prove_and : tactic unit :=
+do i ← mk_const `and.intro, apply_core i {md:=transparency.all, approx:=tt},
+ applyc `eq.refl
 
-
-
---WORKING
-
-/-meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
- lhyps ← tactic_map get_local hyps,
- hyptps ← tactic_map infer_type lhyps,
- let vars := keys (find_vars_in_comps hyptps) in do
- expanded_proofs ← tactic_map (λ e, expand_ineq_proof e vars) lhyps,
- expanded_tps ← tactic_map infer_type expanded_proofs,
- varl ← flatten_expr_list vars,
- (mat, vec) ← create_farkas_matrix hyptps vars,
- mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
- fin_form_mat ← to_expr `(matrix_of_list_of_lists %%mat' (length %%mat') (length %%varl)),
- varvec ← to_expr `(cvector_of_list %%varl),
- rhsvec ← to_expr `(cvector_of_list %%vec'),
- hyptps' ← flatten_expr_list hyptps,
- witnessp ← mathematica.run_command_on_using (λ s, s ++ " // LeanForm // Activate // FindFalseCoeffs")
-                                     hyptps' linarith_path,
- witness ← to_expr `(rvector_of_list (%%witnessp : list int)),
- zd ← to_expr `((dec_trivial : ∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0)),
- zor ← to_expr `((dec_trivial : c_dot ((%%witness)^Tr) %%rhsvec < 0)),
- nex ← to_expr `(motzkin_transposition_le %%fin_form_mat %%rhsvec %%witness %%zd %%zor),
- apply nex,
- existsi varvec,
- dp ← to_expr `(%%fin_form_mat ⬝ %%varvec),
- pred ← to_expr `(λ i, c_ith %%dp i ≤ c_ith %%rhsvec i),
- conj ← to_expr `(and_of_map %%pred),
- trv ← to_expr `(trivial),
- conjpr ← fold_intros trv expanded_proofs,
- apply conjpr
--/
-
--- using comp_val
 meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
- lhyps ← tactic_map get_local hyps,
- hyptps ← tactic_map infer_type lhyps,
- let vars := keys (find_vars_in_comps hyptps) in do
- expanded_proofs ← tactic_map (λ e, expand_ineq_proof e vars) lhyps,
- expanded_tps ← tactic_map infer_type expanded_proofs,
+ lhyps ← monad.mapm get_local hyps,
+ hyptps ← monad.mapm infer_type lhyps,
+ let vars := keys (find_vars_in_comps hyptps),
+ expanded_proofs ← monad.mapm (λ e, expand_ineq_proof e vars) lhyps,
+ expanded_tps ← monad.mapm infer_type expanded_proofs,
  varl ← flatten_expr_list vars,
  (mat, vec) ← create_farkas_matrix hyptps vars,
  mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
@@ -250,23 +198,20 @@ meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
  witnessp ← mathematica.run_command_on_using (λ s, s ++ " // LeanForm // Activate // FindFalseCoeffs")
                                      hyptps' linarith_path,
  witness ← to_expr `(rvector_of_list (%%witnessp : list int)),
+ fas ← to_expr `(∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0),
+-- zd ← mk_inhabitant_using fas (applyc `forall_of_and_of_map >> tactic.repeat prove_and >> applyc `eq.refl),
+/- zd ← mk_inhabitant_using fas 
+ ( applyc `forall_of_and_of_map >> tactic.repeat (do
+     trace "tgt", trace_state, an ← target >>= make_and, trace "an", change an,
+     applyc `and.intro, dsimp >> trace "ZERO" >> reflexivity >> trace "ONE") >> dsimp >> reflexivity),-/
  zd ← to_expr `((dec_trivial : ∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0)), 
  comp_lhs ← to_expr `(c_dot ((%%witness)^Tr) %%rhsvec) >>= make_expr_into_sum,
- --trace ("comp_lhs",  comp_lhs),
--- trace $ get_app_args comp_lhs,
- cltp ← infer_type comp_lhs,
  comp0 ← to_expr `(%%comp_lhs < 0),
  zor ← mk_inhabitant_using comp0 gen_comp_val,
- --trace ("zor", zor),
- --zor ← to_expr `((dec_trivial : c_dot ((%%witness)^Tr) %%rhsvec < 0)),
  nex ← to_expr `(motzkin_transposition_le %%fin_form_mat %%rhsvec %%witness %%zd %%zor),
  apply nex,
  existsi varvec,
- dp ← to_expr `(%%fin_form_mat ⬝ %%varvec),
- pred ← to_expr `(λ i, c_ith %%dp i ≤ c_ith %%rhsvec i),
- conj ← to_expr `(and_of_map %%pred),
- trv ← to_expr `(trivial),
- conjpr ← fold_intros trv expanded_proofs,
+ conjpr ← fold_intros ```(trivial) expanded_proofs,
  apply conjpr
 
 namespace tactic
@@ -281,44 +226,9 @@ end
 end interactive
 end tactic
 
-/-meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
- lhyps ← tactic_map get_local hyps,
- hyptps ← tactic_map infer_type lhyps,
- let vars := keys (find_vars_in_comps hyptps) in do
- expanded_proofs ← tactic_map (λ e, expand_ineq_proof e vars) lhyps,
- expanded_tps ← tactic_map infer_type expanded_proofs,
- varl ← flatten_expr_list vars,
- (mat, vec) ← create_farkas_matrix hyptps vars,
- mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
- fin_form_mat ← to_expr `(matrix_of_list_of_lists %%mat' (length %%mat') (length %%varl)),
- varvec ← to_expr `(cvector_of_list %%varl),
- rhsvec ← to_expr `(cvector_of_list %%vec'),
- hyptps' ← flatten_expr_list hyptps,
- witnessp ← mathematica.run_command_on_using (λ s, s ++ " // LeanForm // Activate // FindFalseCoeffs")
-                                     hyptps' linarith_path,
- witness ← to_expr `(rvector_of_list (%%witnessp : list int)),
- to_expr  `(∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0) >>= assert `zd,
- applyc `foo,
- repeat make_mat_eq_prf,
- trace "here",
--- trace_state,
- zor ← to_expr `((dec_trivial : c_dot ((%%witness)^Tr) %%rhsvec < 0)),
- nex ← to_expr `(motzkin_transposition_le %%fin_form_mat %%rhsvec %%witness zd %%zor),
- apply nex,
- existsi varvec,
- dp ← to_expr `(%%fin_form_mat ⬝ %%varvec),
- pred ← to_expr `(λ i, c_ith %%dp i ≤ c_ith %%rhsvec i),
- conj ← to_expr `(and_of_map %%pred),
- trv ← to_expr `(trivial),
- conjpr ← fold_intros trv expanded_proofs,
- apply conjpr
-
-
- -/
-
 
 -- matrix manipulations
-open matrix
+open matrix nat
 
 def matrix_of_list_of_lists {A : Type} [inhabited A] (l : list (list A)) (m n : ℕ) :
   matrix A m n :=
@@ -327,86 +237,6 @@ def matrix_of_list_of_lists {A : Type} [inhabited A] (l : list (list A)) (m n : 
   if Hjr : ↑j < length r then ith r j Hjr
   else default A
  else default A
-
-def and_of_map_aux (n : ℕ) (f : fin n → Prop) : Π k, k < n → Prop
-| 0 h := f (fin.mk 0 h)
-| (k + 1) h := (and_of_map_aux k (lt_of_succ_lt h)) ∧ f (fin.mk (k+1) h)
-
-def and_of_map : Π {n : ℕ}, (fin n → Prop) → Prop
-| 0 P := true
-| (k+1) P := and_of_map_aux (k+1) P k (lt_succ_self _)
-
-
-theorem and_of_map_aux_of_forall (n : ℕ) (P : fin n → Prop) (H : ∀ n : fin n, P n) : Π k, Π p : k < n, and_of_map_aux n P k p
-| 0 p := H _
-| (k+1) p := and.intro (by apply and_of_map_aux_of_forall) (H _)
-
-theorem and_of_map_of_forall : Π {n : ℕ} {P : fin n → Prop} (H : ∀ k : fin n, P k), and_of_map P
-| 0 P H := trivial
-| (k+1) P H := and_of_map_aux_of_forall _ _ H _ _
-
-lemma eq_of_ge_of_lt_succ {n k : ℕ} (h1 : k ≥ n) (h2 : k < n+1) : k = n := sorry
-lemma eq_zero_of_lt_one {n : ℕ} (Hn : n < 1) : n = 0 := sorry
-
---theorem reduce_fin {n : ℕ} (k : fin (succ n)) : k^.val = n ∨ ∃ k' : fin n, k = raise_fin k' :=
---if H : k^.val ≥ n then or.inl (eq_of_ge_of_lt_succ H (fin.is_lt _)) else
---or.inr (exists.intro (fin.mk k^.val (lt_of_not_ge H)) (begin induction k, reflexivity end))
-
-def fin_lower {n : ℕ} (v : fin (succ n)) (h : v^.val < n) : fin n := ⟨v^.val, h⟩
-
-def fin_prop_lower {n : ℕ} (P : fin (succ n) → Prop) : fin n → Prop := λ v, P ⟨v^.val, lt_succ_of_lt v^.is_lt⟩
-
-theorem of_fin_prop_lower (n : ℕ) (P : fin (succ n) → Prop) (v : fin (succ n)) (h : v^.val < n) (hvp : fin_prop_lower P (fin_lower v h)) : P v := begin
-unfold fin_prop_lower at hvp, unfold fin_lower at hvp,
-dsimp at hvp,
-assert h' : v = {val := v^.val, is_lt := v^.is_lt}, 
-induction v,
-apply congr,
-reflexivity,
-reflexivity,
-rw h',
-apply hvp
-end
-
-theorem and_of_map_aux_lower {n : ℕ} {P : fin (succ n) → Prop}  (k) (h : k < n) (h2 : and_of_map_aux (n+1) P k (lt_succ_of_lt h)) :
-  and_of_map_aux n (fin_prop_lower P) k h := 
-begin
- induction k,
- apply h2,
- unfold and_of_map_aux,
- split,
- apply ih_1,
- apply and.left h2,
- apply and.right h2
-end
-
-theorem and_of_map_lower {n : ℕ} {P : fin (succ n) → Prop} (H : and_of_map P) : and_of_map (fin_prop_lower P) := 
-begin
- induction n,
- triv,
- apply and_of_map_aux_lower,
- apply and.left H
-end
-
-theorem forall_of_and_of_map : Π {n : ℕ} {P : fin n → Prop} (H : and_of_map P) (k : fin n), P k
-| 0 P H (fin.mk val is_lt) := absurd is_lt (not_lt_zero _)
-| 1 P H (fin.mk val is_lt) := have H1 : val = 0, from eq_zero_of_lt_one is_lt, begin revert is_lt, rw H1, intro, apply H  end
-| (n+2) P H k := begin 
- induction k, 
- cases (decidable.em (val < n+1)), 
- {apply @of_fin_prop_lower _ _ (fin.mk val is_lt) a,
- apply forall_of_and_of_map,
- apply and_of_map_lower,
- apply H},
- {assert veq : val = n+1,
- apply eq_of_ge_of_lt_succ,
- apply le_of_not_gt a,
- apply is_lt,
- revert is_lt,
- rw veq,
- intro,
- apply and.right H}
-end
 
 
 def vec_le {A : Type} [order_pair A] {n : ℕ} (v1 v2 : rvector A n) := ∀ i : fin n, r_ith v1 i ≤ r_ith v2 i

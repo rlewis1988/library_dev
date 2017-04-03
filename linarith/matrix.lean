@@ -4,11 +4,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Author: Robert Y. Lewis
 
 Basic properties of matrices and vectors. Proof of Motzkin's transposition theorem.
+
+This development is ported from Lean 2, and needs to be updated for inclusion in
+the Lean 3 standard library. Specifically, the proof of the Motzkin transposition
+theorem (a generalized version of Farkas' lemma) has not been fully ported, and is
+pending the addition of big operations (Suml, etc).
 -/
 
---import data.real data.fin algebra.module
 import ..data.list.comb
-open nat list -- rat 
+open nat list 
 
 namespace list
 def upto : nat → list nat
@@ -30,14 +34,13 @@ def Suml {A B : Type} [add_monoid B] :  list A → (A → B) → B
 | [h] f := f h
 | (h :: t) f := f h + Suml t f
 
+
 namespace matrix
 
 definition matrix (A : Type) (m n : ℕ) := fin m → fin n → A
 
 notation `M_(`m`, `n`)` := matrix _ m n
 notation `M[`A`]_(`m`, `n`)` := matrix A m n
-
--- should rvector and cvector just be notation?
 
 definition rvector (A : Type) (n : ℕ) := M[A]_(1, n)
 

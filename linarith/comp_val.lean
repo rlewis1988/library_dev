@@ -1,3 +1,9 @@
+/-
+Copyright (c) 2017 Robert Y. Lewis. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Author: Robert Y. Lewis
+-/
+
 open tactic expr
 universe u
 
@@ -62,7 +68,12 @@ end semirings
 section rings
 variable [linear_ordered_ring α]
 
-theorem gt_neg {c : α} (h : a + b = c) (h2 : c > 0) : a > -b := sorry
+theorem gt_neg {c : α} (h : a + b = c) (h2 : c > 0) : a > -b := 
+have h' : b + a = c, from add_comm a b ▸ h,
+calc
+  a = -b + c : eq_neg_add_of_add_eq h'
+... > -b : lt_add_of_pos_right _ h2
+
 end rings
 
 meta def mk_conj_app_of_pred (e : expr) (tp : expr) : ℕ → tactic expr
@@ -136,6 +147,10 @@ meta def is_num : expr → bool
 | ```(@_root_.zero %%_ %%_) := tt
 | ```(@one %%_ %%_) := tt
 | _ := ff
+
+meta def is_signed_num : expr → bool
+| ```(-%%a) := is_num a
+| a := is_num a
 
 meta def rw' := rewrite_core transparency.reducible ff ff occurrences.all ff
 

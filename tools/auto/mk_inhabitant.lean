@@ -7,6 +7,7 @@ do m ← mk_meta_var A,
    gs ← get_goals,
    set_goals [m],
    t,
+   now,
    r ← instantiate_mvars m,
    set_goals gs,
    return r

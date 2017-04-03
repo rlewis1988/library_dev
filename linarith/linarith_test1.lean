@@ -9,7 +9,7 @@ import .linarith
 open expr tactic rb_map list matrix
 set_option trace.app_builder true
 set_option trace.check true
-
+set_option pp.implicit true 
 def tester7 (x y : ℤ) 
   (h1 : 2*x + 4*y ≤ 4) (h2 : (-1)*x ≤ 1)
   (h3 : (-1)*y ≤ -5) : false := by not_exists_of_linear_hyps h1 h2 h3
