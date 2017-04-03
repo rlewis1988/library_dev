@@ -313,6 +313,7 @@ decidable.by_cases
   (suppose a = b, begin rw [count_cons, if_pos this, if_pos this] end)
   (suppose a ≠ b, begin rw [count_cons, if_neg this, if_neg this], reflexivity end)
 
+
 @[simp]
 lemma count_cons_self (a : α) (l : list α) : count a (a::l) = succ (count a l) :=
 if_pos rfl
