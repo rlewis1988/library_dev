@@ -375,4 +375,20 @@ instance : discrete_linear_ordered_field ℚ :=
   decidable_le    := take a b, rat.decidable_nonneg (b - a),
   decidable_lt    := take a b, show decidable (rat.nonneg (b - a) ∧ a ≠ b), by apply_instance }
 
+#exit
+set_option trace.class_instances true
+
+
+--example : decidable_linear_order rat := by apply_instance -- works
+example : ∀ p q : rat, decidable (p < q) := by apply_instance -- fails
+ 
+#exit
+example (A : Type) [decidable_linear_order A] : ∀ p q : A, decidable (p < q) := by apply_instance -- works
+
+--example : ∀ p q : rat, decidable (p < q) := decidable_linear_order.decidable_lt _
+--#check decidable_linear_order.decidable_lt
+example : ∀ p q : rat, decidable (p < q) := lt.decidable
+example : ∀ p q : rat, decidable (p < q) := by apply_instance 
 end rat
+#check @lt.decidable
+#check @lt.de

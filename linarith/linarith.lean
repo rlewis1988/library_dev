@@ -10,28 +10,28 @@ open expr tactic rb_map
 def linarith_path := "~/lean/lean/extras/mathematica/linarith.m"
 --"c:/msys64/home/robyl/lean/lean/extras/mathematica/linarith.m"
 
-meta def find_vars_aux2 : expr → rb_map expr unit
+private meta def find_vars_aux2 : expr → rb_map expr unit
 | (app (app (app (app (const ``add _) _) _) u) v) := union (find_vars_aux2 u) (find_vars_aux2 v)
 | (app (app (app (app (const ``mul _) _) _) u) v) :=
   if (is_signed_num u) then insert (mk _ _) v unit.star else mk _ _
 | _ := mk _ _
 
-meta def find_vars (l : list expr) : rb_map expr unit :=
+private meta def find_vars (l : list expr) : rb_map expr unit :=
 list.foldr (λ e m, union m (find_vars_aux2 e)) (mk _ _) l
 
-meta def mk_var_map : expr → rb_map expr expr
+private meta def mk_var_map : expr → rb_map expr expr
 | (app (app (app (app (const ``add _) _) _) u) v) := union (mk_var_map u) (mk_var_map v)
 | (app (app (app (app (const ``mul _) _) _) u) v) :=
   if (is_signed_num u) then insert (mk _ _) v u else mk _ _
 | _ := mk _ _
 
-meta def sum_eq_aux (m : rb_map expr expr) (e z : expr) : expr :=
+private meta def sum_eq_aux (m : rb_map expr expr) (e z : expr) : expr :=
 match (find m e) with
 | (some d) := d
 | none   := z
 end
 
-meta def sum_with_zeros_aux (e z : expr) : list expr → tactic expr
+private meta def sum_with_zeros_aux (e z : expr) : list expr → tactic expr
 | []       := return z
 | [h]      :=
   let var_to_coeff := mk_var_map e, coeff := sum_eq_aux var_to_coeff h z in
@@ -42,11 +42,11 @@ meta def sum_with_zeros_aux (e z : expr) : list expr → tactic expr
      sum ← sum_with_zeros_aux t,
      mk_app `add [prod, sum]
 
-meta def sum_with_zeros (e : expr) (l : list expr) : tactic expr := 
+private meta def sum_with_zeros (e : expr) (l : list expr) : tactic expr := 
 do etp ← infer_type e,
    ez ← to_expr `((0 : %%etp)),
    sum_with_zeros_aux e ez l
-#check lt_succ_of_lt
+
 /--
   e is a sum (a*x + b*y + ...)
   l is a list of variables that includes all variables in e
@@ -58,9 +58,9 @@ meta def sum_eq_sum_with_zeros (e : expr) (l : list expr) : tactic (expr × expr
  eqpr ← mk_inhabitant_using eqp simp,
  return (sum, eqpr)
 
-attribute [simp] zero_mul add_zero add_assoc --mul_comm
+attribute [simp] zero_mul add_zero add_assoc 
 
-meta def coeff_matrix_aux (e z : expr) (vars : list expr) : list expr :=
+private meta def coeff_matrix_aux (e z : expr) (vars : list expr) : list expr :=
 let mv := mk_var_map e in
  list.map (λ v, match (find mv v) with
  | some d := d
@@ -81,29 +81,29 @@ def bool_filter {α : Type} (P : α → bool) : list α → list α
 | (h :: t) := if P h then h :: bool_filter t else bool_filter t
 
 -- split a list of linear hypotheses into strict <, weak ≤, and eq =
-meta def split_lin_hyps (l : list expr) : list expr × list expr × list expr :=
+private meta def split_lin_hyps (l : list expr) : list expr × list expr × list expr :=
 ⟨bool_filter (λ e, is_app_of e `lt) l, bool_filter (λ e, is_app_of e `le) l, bool_filter (λ e, is_app_of e `eq) l⟩
 
-meta def sep_lin_hyp (e : expr) : expr × expr :=
+private meta def sep_lin_hyp (e : expr) : expr × expr :=
 match get_app_args e with
 | [_, _, a, b] := (a, b)
 | _            := (var 0, var 0)
 end
 
-meta def sep_lin_hyp_with_rel (e : expr) : expr × expr × expr :=
+private meta def sep_lin_hyp_with_rel (e : expr) : expr × expr × expr :=
 match get_app_args e with
 | [_, _, a, b] := (app_fn e, a, b)
 | _            := (app_fn e, var 0, var 0)
 end
 
-meta def sep_lin_hyps : list expr → list expr × list expr
+private meta def sep_lin_hyps : list expr → list expr × list expr
 | [] := ([], [])
 | (h :: t) := 
   match (sep_lin_hyp h, sep_lin_hyps t) with
   | ((e1, e2), (l1, l2)) := (e1::l1, e2::l2)
   end
 
-meta def find_vars_in_comps (l : list expr) : rb_map expr unit :=
+private meta def find_vars_in_comps (l : list expr) : rb_map expr unit :=
 let (lhss, rhss) := sep_lin_hyps l in
 union (find_vars lhss) (find_vars rhss)
 
@@ -165,26 +165,10 @@ meta def fold_intros : expr → list expr → tactic expr
 | dft (h1 :: h2 :: t) := do l ← to_expr `(and.intro %%h1 %%h2), fold_intros dft (l :: t)
 
 
-meta def make_mat_eq_prf : tactic unit := do
- dunfold [`r_ith, `rvector_of_list, `matrix_of_list_of_lists, `mul, `r_ith],
- dsimp,
- (lhs, rhs) ← target >>= match_eq,
- (lhsv, lhsp) ← norm_num lhs,
- (rhsv, rhsp) ← norm_num rhs,
- to_expr `(eq.trans %%lhsp (eq.symm %%rhsp)) >>= apply
-
-meta def make_and (e : expr) : tactic expr :=
-do m1 ← mk_mvar, m2 ← mk_mvar, m3 ← mk_mvar, m4 ← mk_mvar,
-   to_expr `(@eq %%m3 %%m1 (@zero %%m3 %%m4) ∧ %%m2) >>= unify e,
-   to_expr `(%%m1 = 0 ∧ %%m2)
-
-meta def prove_and : tactic unit :=
-do i ← mk_const `and.intro, apply_core i {md:=transparency.all, approx:=tt},
- applyc `eq.refl
-
 meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
  lhyps ← monad.mapm get_local hyps,
  hyptps ← monad.mapm infer_type lhyps,
+ [tp, _, _, _] ← return $ get_app_args (head hyptps),
  let vars := keys (find_vars_in_comps hyptps),
  expanded_proofs ← monad.mapm (λ e, expand_ineq_proof e vars) lhyps,
  expanded_tps ← monad.mapm infer_type expanded_proofs,
@@ -197,13 +181,37 @@ meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
  hyptps' ← flatten_expr_list hyptps,
  witnessp ← mathematica.run_command_on_using (λ s, s ++ " // LeanForm // Activate // FindFalseCoeffs")
                                      hyptps' linarith_path,
+ witness ← to_expr `(rvector_of_list (%%witnessp : list %%tp)),
+ trace witness,
+ zd ← to_expr `((dec_trivial : ∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0)), 
+ trace zd,
+ /-comp_lhs ← to_expr `(c_dot ((%%witness)^Tr) %%rhsvec) >>= make_expr_into_sum,
+ comp0 ← to_expr `(%%comp_lhs < 0),
+ trace comp0,
+ zor ← mk_inhabitant_using comp0 gen_comp_val,-/
+ to_expr `(c_dot ((%%witness)^Tr) %%rhsvec) >>= infer_type >>= trace,
+ zor ← to_expr `(dec_trivial : c_dot ((%%witness)^Tr) %%rhsvec < (0 : %%tp)),
+ nex ← to_expr `(motzkin_transposition_le %%fin_form_mat %%rhsvec %%witness %%zd %%zor),
+ apply nex,
+ existsi varvec,
+ conjpr ← fold_intros ```(trivial) expanded_proofs,
+ apply conjpr
+
+meta def not_exists_of_linear_hyps_gen (hyps : list name) : tactic unit := do
+ lhyps ← monad.mapm get_local hyps,
+ hyptps ← monad.mapm infer_type lhyps,
+ let vars := keys (find_vars_in_comps hyptps),
+ expanded_proofs ← monad.mapm (λ e, expand_ineq_proof e vars) lhyps,
+ varl ← flatten_expr_list vars,
+ (mat, vec) ← create_farkas_matrix hyptps vars,
+ mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
+ fin_form_mat ← to_expr `(matrix_of_list_of_lists %%mat' (length %%mat') (length %%varl)),
+ varvec ← to_expr `(cvector_of_list %%varl),
+ rhsvec ← to_expr `(cvector_of_list %%vec'),
+ hyptps' ← flatten_expr_list hyptps,
+ witnessp ← mathematica.run_command_on_using (λ s, s ++ " // LeanForm // Activate // FindFalseCoeffs")
+                                     hyptps' linarith_path,
  witness ← to_expr `(rvector_of_list (%%witnessp : list int)),
- fas ← to_expr `(∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0),
--- zd ← mk_inhabitant_using fas (applyc `forall_of_and_of_map >> tactic.repeat prove_and >> applyc `eq.refl),
-/- zd ← mk_inhabitant_using fas 
- ( applyc `forall_of_and_of_map >> tactic.repeat (do
-     trace "tgt", trace_state, an ← target >>= make_and, trace "an", change an,
-     applyc `and.intro, dsimp >> trace "ZERO" >> reflexivity >> trace "ONE") >> dsimp >> reflexivity),-/
  zd ← to_expr `((dec_trivial : ∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0)), 
  comp_lhs ← to_expr `(c_dot ((%%witness)^Tr) %%rhsvec) >>= make_expr_into_sum,
  comp0 ← to_expr `(%%comp_lhs < 0),
@@ -221,6 +229,7 @@ open lean.parser interactive.types interactive
 
 meta def not_exists_of_linear_hyps (ids : parse (many ident)) : tactic unit :=
 _root_.not_exists_of_linear_hyps ids
+
 
 end
 end interactive
@@ -251,7 +260,6 @@ variables {A : Type} [linear_ordered_ring A] {a b c n : ℕ}
         (Hsum : ∀ i : fin n, r_ith (y ⬝ P) i + r_ith (z ⬝ Q) i + r_ith (t ⬝ R) i = 0)
 
 include Hsum
-
 theorem motzkin_transposition_with_equalities_conj
         (Hor : (c_dot (y^Tr) p + c_dot (z^Tr) q + c_dot (t^Tr) r < 0) ∨
                ((∃ i : fin a, r_ith y i > 0) ∧ c_dot (y^Tr) p + c_dot (z^Tr) q + c_dot (t^Tr) r ≤ 0)) :

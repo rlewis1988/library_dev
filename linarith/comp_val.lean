@@ -94,28 +94,27 @@ meta def forall_fin_into_conj : expr → tactic expr
  k ← intro,
 -/ 
 
-
 set_option eqn_compiler.max_steps 20000
 meta def mk_gt_prf (mk_ge_prf : expr → expr → tactic expr) : expr → expr → tactic expr 
-| (```(@bit0 %%_ %%_ %%t1)) (```(@bit0 %%_ %%_ %%t2)) := 
+| (```(bit0 %%t1)) (```(bit0 %%t2)) := 
    do prf ← mk_gt_prf t1 t2,
       tactic.mk_app `bit0_gt_bit0 [prf]
-| (```(@bit1 %%_ %%_ %%_ %%t1)) (```(@bit0 %%_ %%_ %%t2)) := 
+| (```(bit1 %%t1)) (```(bit0 %%t2)) := 
    do prf ← mk_ge_prf t1 t2,
       tactic.mk_app `bit1_gt_bit0 [prf]
-| (```(@bit0 %%_ %%_ %%t1)) (```(@bit1 %%t %%_ %%_ %%t2)) := 
+| (```(bit0 %%t1)) (```(@bit1 %%t %%_ %%_ %%t2)) := 
    do (n, eqp) ← to_expr `(%%t2 + 1 : %%t) >>= norm_num, prf ← mk_ge_prf t1 n,
       tactic.mk_app `bit0_gt_bit1' [prf, eqp]
-| (```(@bit1 %%_ %%_ %%_ %%t1)) (```(@bit1 %%_ %%_ %%_ %%t2)) := 
+| (```(bit1 %%t1)) (```(bit1 %%t2)) := 
    do prf ← mk_gt_prf t1 t2,
       tactic.mk_app `bit1_gt_bit1 [prf]
-| (```(@bit0 %%_ %%_ %%t1)) (```(@_root_.zero %%t %%_)) :=
+| (```(bit0 %%t1)) (```(@_root_.zero %%t %%_)) :=
    do prf ← to_expr `(0 : %%t) >>= mk_gt_prf t1,
       tactic.mk_app `bit0_gt_zero [prf]
-| (```(@bit0 %%_ %%_ %%t1)) (```(@one %%t %%_)) :=
+| (```(bit0 %%t1)) (```(@one %%t %%_)) :=
    do prf ← to_expr `(1 : %%t) >>= mk_ge_prf t1,
       tactic.mk_mapp `bit0_gt_one [none, none, some t1, some prf]
-| (```(@bit1 %%_ %%_ %%_ %%t1)) (```(@_root_.zero %%t %%_)) :=
+| (```(bit1 %%t1)) (```(@_root_.zero %%t %%_)) :=
    do prf ← to_expr `(0 : %%t) >>= mk_ge_prf t1 ,
       tactic.mk_app `bit1_gt_zero [prf]
 | (```(@bit1 %%_ %%_ %%_ %%t1)) (```(@one %%t %%_)) :=
@@ -169,11 +168,21 @@ else
 meta def make_expr_into_num : expr → tactic expr := λ e, do
  --trace "BLOCK 3", trace e,
  t ← infer_type e,
+ (do onet ← mk_mapp `one [some t, none], unify e onet, return onet) <|>
+ (do zerot ← mk_mapp `zero [some t, none], unify e zerot, return zerot) <|>
+ (do m ← mk_meta_var t, b0m ← mk_app `bit0 [m], unify e b0m, return b0m) <|>
+ (do m ← mk_meta_var t, b1m ← mk_app `bit1 [m], unify e b1m, return b1m) <|>
+ (do m ← mk_meta_var t, negm ← mk_app `neg [m], unify e negm, rv ← make_expr_into_num m, return negm)
+
+
+/-meta def make_expr_into_num : expr → tactic expr := λ e, do
+ --trace "BLOCK 3", trace e,
+ t ← infer_type e,
  (do onet ← to_expr `(1 : %%t), unify e onet, return onet) <|>
  (do zerot ← to_expr `(0 : %%t), unify e zerot, return zerot) <|>
  (do m ← mk_meta_var t, b0m ← to_expr `(bit0 %%m), unify e b0m, return b0m) <|>
  (do m ← mk_meta_var t, b1m ← to_expr `(bit1 %%m), unify e b1m, return b1m) <|>
- (do m ← mk_meta_var t, negm ← to_expr `(- %%m), unify e negm, rv ← make_expr_into_num m, to_expr `(- %%rv))
+ (do m ← mk_meta_var t, negm ← to_expr `(- %%m), unify e negm, rv ← make_expr_into_num m, to_expr `(- %%rv))-/
 
 meta def make_expr_into_mul : expr → tactic expr := λ e, do
  t ← infer_type e,
@@ -192,32 +201,8 @@ meta def make_expr_into_sum : expr → tactic expr := λ e, (do
  <|> 
  (make_expr_into_mul e)
 
-
- #exit
-
---set_option trace.app_builder true
---set_option pp.all true
---set_option pp.numerals false
---set_option pp.implicit true
-
-example : (1 : α) > 0 := by gen_comp_val 
-example : (2 : α) > 0 := by gen_comp_val 
-example : (3 : α) > 0 := by gen_comp_val
-example : (4 : α) > 0 := by gen_comp_val
-example : (2 : α) > 1 := by gen_comp_val
-example : (3 : α) > 1 := by gen_comp_val
-example : (4 : α) > 1 := by gen_comp_val
-example : (3 : α) > 2 := by gen_comp_val
-example : (4 : α) > 2 := by gen_comp_val
-example : (4 : α) > 3 := by gen_comp_val
-example : (5 : α) > 3 := by gen_comp_val
-example : (5 : α) > 4 := by gen_comp_val
-example : (5 : α) > 1 := by gen_comp_val
-example : (6 : α) > 3 := by gen_comp_val
-example : (6 : α) > 5 := by gen_comp_val
-example : (7 : α) > 4 := by gen_comp_val
-example : (7 : α) > 3 := by gen_comp_val
-example : (4503 : α) > 7 := by gen_comp_val
-example : (45034234 : α) + 44 > 23213 := by gen_comp_val
-example : (45030000 : α) > 4503000+44444 := by gen_comp_val
-example : (45030440 * 3 : α) > 4503000+44444 := by gen_comp_val
+meta def make_expr_into_eq_zero : expr → tactic expr := λ e, (do
+ m0 ← mk_mvar, m1 ← mk_mvar, m2 ← mk_mvar, 
+ to_expr `(@eq %%m1 %%m0 (@zero %%m1 %%m2))>>= unify e,
+-- trace m0,
+ return m0)
