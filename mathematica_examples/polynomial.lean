@@ -4,8 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Author: Robert Y. Lewis
 -/
 
-import init.meta.mathematica
-open expr tactic int
+import init.meta.mathematica ..data.rat .datatypes
+open expr tactic int rat
 
 meta def lam_bod : expr → tactic expr
 | (lam nm bi tp bd) :=
@@ -57,8 +57,12 @@ meta def multi_exact : list expr → tactic unit
 | [] := now
 | (t :: ts) := exact t >> multi_exact ts
 
--- returns an expr k encoding a list ks and a list of proofs ps such that ps[i] proves l[i](ks) = 0
-meta def solve_polys : list expr → tactic (expr × list expr)
+/--
+This variant takes a list l  of lambda functions (e.g. λ x y, x*x-y), and
+returns an expr k encoding a list ks and a list of proofs ps such that ps[i] proves l[i](ks) = 0.
+We only look for rational solutions, since they can be checked using norm_num.
+-/
+meta def solve_polys' : list expr → tactic (expr × list expr)
 | [] := fail "solve_polys failed, no functions given"
 | (h :: t) := 
   let vs' := get_poly_vars h in
@@ -69,7 +73,7 @@ meta def solve_polys : list expr → tactic (expr × list expr)
      conj ← monad.foldl (λ e1 e2, to_expr `(%%e1 ∧ (%%e2 = 0))) (const `true []) l',
      vs ← expr_of_list_expr vs',
      sol ← mathematica.run_command_on_2_using 
-      (λ s t, "Solve[ " ++ s ++ "// LeanForm // Activate, " ++  t ++" // LeanForm // Activate, Reals] // LUnrule")
+      (λ s t, "Solve[ " ++ s ++ "// LeanForm // Activate, " ++  t ++" // LeanForm // Activate, Rationals] // LUnrule")
         conj vs "poly.m",
      tp ← infer_type $ list.head vs',
      r ← to_expr `((%%sol : list (list %%tp))),
@@ -79,13 +83,33 @@ meta def solve_polys : list expr → tactic (expr × list expr)
      zrprs ← monad.mapm (λ e, do e' ← norm_num e, return e'.2) apps,
      return (fstsol, zrprs)
 
-meta def strip_ex : expr → expr 
-| (app (app (const `Exists _) _) (lam _ _ _ bod)) := strip_ex bod
-| a := a
+/--
+returns variable type, body, and list of variables
+-/
+meta def get_locals_from_nested_ex : ℕ → expr → (expr × expr × list expr)
+| k (app (app (const `Exists _) _) (lam nm bi tp bd)) := 
+  let (_, prp, tl) := get_locals_from_nested_ex (k+1) bd in (tp, prp, var k :: tl)
+| _ a := (a, a, [])
 
-def e1 : ∃ x y : ℤ, x*x*x-y=0 ∧ y-8=0 := by
-do f ← to_expr `(λ x y : ℤ, x*x*x-y),
-   g ← to_expr `(λ x y : ℤ, y-8),
-   (_, prs) ← solve_polys [f, g],
-   constructor, constructor, constructor,
-   multi_exact prs
+/--
+this alternative  will discharge a goal of the form 
+∃ x1...xn, p1(x1...xn)=0 ∧ ... ∧ pk(x1...xn)=0
+-/
+meta def solve_polys : tactic unit :=
+do t ← target,
+   let (tp, conj, vars) := get_locals_from_nested_ex 0 t,
+   sol ← mathematica.run_command_on_list_using 
+    (λ s, "With[{l="++s++"}, Solve[l[[1]] // LeanForm // Activate, 
+            Map[Activate[LeanForm[#]]&, Drop[l,1]], Rationals] // LUnrule]")
+       (conj::(vars^.reverse)) "poly.m",
+   r ← to_expr `((%%sol : list (list %%tp))),
+   fstsol ← dest_list_fst r,
+   intes ← expr_list_of_list_expr fstsol,
+   monad.mapm' existsi intes,
+   repeat (split <|> do (lhs, rhs) ← target >>= match_eq, (_, prf) ← norm_num lhs, apply prf)
+
+   
+example : ∃ x y : ℚ, x*x*x-y=0 ∧ y-8=0 := by solve_polys
+
+
+example : ∃ x y : ℝ, 99*y*y/20-x*x*y+x*y=0 ∧ 2*y*y*y-2*x*x*y*y-2*x*x*x+6381/4=0 := by solve_polys
