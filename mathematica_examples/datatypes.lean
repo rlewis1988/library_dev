@@ -31,6 +31,9 @@ end
 
 @[instance] def {u} inhabited_of_has_zero {α : Type u} [has_zero α] : inhabited α := ⟨0⟩ -- works
 
+lemma {u} congr_helper {α : Type u} (a1 a2 : α) (l1 l2 : list α) (h1 : a1 = a2) (h2 : l1 = l2) :
+       a1::l1 = a2::l2 := begin [smt] end
+
 open tactic
 meta def mk_inhabitant_using (A : expr) (t : tactic unit) : tactic expr :=
 do m ← mk_meta_var A,
