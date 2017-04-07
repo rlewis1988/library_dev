@@ -14,6 +14,11 @@ def {u} npow {α : Type u} [has_mul α] [has_one α] : α → ℕ → α
 | r (n+1) := r*npow r n
 infix `^` := npow
 
+section
+open tactic
+meta def rw' := rewrite_core transparency.semireducible ff ff occurrences.all ff
+end
+
 @[simp] lemma rpow_zero (r : ℝ) : r^0 = 1 := rfl
 @[simp] lemma rpow_succ (r : ℝ) (n : ℕ) : r^(n+1) = r*r^n := rfl
 

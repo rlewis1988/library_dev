@@ -176,7 +176,6 @@ do t ← target,
 -- the examples below take a few seconds to run, and can bog down the editor.
 -- remove the #exit command to try them.
 #exit
-
 example : ∃ l u, is_lower_triangular l ∧ is_upper_triangular u ∧ l ** u = [[(1 : ℤ), 2], [3, 4]] := 
 by lu_tac
 
