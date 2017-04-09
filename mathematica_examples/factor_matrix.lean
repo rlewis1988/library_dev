@@ -11,18 +11,11 @@ open expr tactic rat
 For this example, we give a very brief development of matrices as lists of lists.
 -/
 
-@[reducible]
-def {u} ith {α : Type u} [inhabited α] (l : list α) (i : ℕ) : α :=
-match l^.nth i with
-| some a := a
-| none   := default α
-end
-
 /--
 The transpose of a list-of-lists matrix
 -/
 def {u} transpose_list {α : Type u} [inhabited α] (m : list (list α)) : list (list α) :=
-list.map (λ i, m^.map (λ l, ith l i)) (native.upto (ith m 0)^.length)
+list.map (λ i, m^.map (λ l, kth l i)) (native.upto (kth m 0)^.length)
 
 /--
 The dot product of two list "vectors"
@@ -37,26 +30,26 @@ The product of two list-of-lists matrices
 -/
 def {u} mul_lists {α : Type u} [has_zero α] [has_mul α] [has_add α] [inhabited α]
        (m1 m2 : list (list α))  : list (list α) :=
-list.map (λ i, (list.map (λ j, dot_lists (ith m1 i) (ith (transpose_list m2) j)) 
-         (native.upto (ith m1 0)^.length))) (native.upto m1^.length)
+list.map (λ i, (list.map (λ j, dot_lists (kth m1 i) (kth (transpose_list m2) j)) 
+         (native.upto (kth m1 0)^.length))) (native.upto m1^.length)
    
 infix `**`:50 := mul_lists
 
 @[reducible]
 def {u} is_lower_triangular {α : Type u} [has_lt α] [has_zero α] (m : list (list α)) : Prop :=
-∀ i : fin (m^.length), ∀ j : fin ((ith m i^.val)^.length), i^.val < j^.val → ith (ith m i^.val) j^.val = 0
+∀ i : fin (m^.length), ∀ j : fin ((kth m i^.val)^.length), i^.val < j^.val → kth (kth m i^.val) j^.val = 0
 
 @[reducible]
 def {u} is_upper_triangular {α : Type u} [has_lt α] [has_zero α] (m : list (list α)) : Prop :=
-∀ i : fin (m^.length), ∀ j : fin ((ith m i^.val)^.length), i^.val > j^.val → ith (ith m i^.val) j^.val = 0
+∀ i : fin (m^.length), ∀ j : fin ((kth m i^.val)^.length), i^.val > j^.val → kth (kth m i^.val) j^.val = 0
 
 
 
 
 
 /-
-On data types with decidable (in)equality, we can simplify the implementation using this tactic
-to do arithmetic. However, it can be slow.
+On data types wkth decidable (in)equality, we can simplify the implementation using this tactic
+to do arkthmetic. However, it can be slow.
 -/
 meta def dec_triv_tac : tactic unit :=
 do t ← target,
@@ -75,7 +68,7 @@ do md ← mk_mvar, md2 ← mk_mvar,
    gep ← mk_inhabitant_using ge gen_comp_val,
    to_expr `(absurd %%e (not_lt_of_ge %%gep)) >>= apply)
 
-meta def unify_with_eq (e : expr) : tactic (expr × expr) :=
+meta def unify_wkth_eq (e : expr) : tactic (expr × expr) :=
 do e1 ← mk_mvar, e2 ← mk_mvar,
    to_expr `(%%e1 = %%e2) >>= unify e,
    return $ (e1, e2)
@@ -87,7 +80,7 @@ dsimp,
 to_expr `(%%i < %%j → %%P) >>= unify t, 
  h ← mk_fresh_name >>= intro, 
 (dec_false h  <|> do 
- (e1, e2) ← target >>= unify_with_eq, to_expr `(%%e1 = %%e2) >>= change, 
+ (e1, e2) ← target >>= unify_wkth_eq, to_expr `(%%e1 = %%e2) >>= change, 
  reflexivity)
 
 /--
@@ -168,7 +161,7 @@ do t ← target,
        e 
       "matrix_factor.m",
    m2 ← to_expr `((%%m : list %%tp)),
-   lhs ← to_expr `(ith %%m2 0), rhs ← to_expr `(ith %%m2 1),
+   lhs ← to_expr `(kth %%m2 0), rhs ← to_expr `(kth %%m2 1),
    existsi lhs, existsi rhs,
    split, triangularity_tac, split, triangularity_tac, mk_mul_prf
 
@@ -178,7 +171,7 @@ do t ← target,
 #exit
 example : ∃ l u, is_lower_triangular l ∧ is_upper_triangular u ∧ l ** u = [[(1 : ℤ), 2], [3, 4]] := 
 by lu_tac
-
+#exit
 example : ∃ l u, is_lower_triangular l ∧ is_upper_triangular u
              ∧ l ** u = [[(1 : ℤ), 2, 3], [1, 4, 9], [1, 8, 27]] := 
 by lu_tac

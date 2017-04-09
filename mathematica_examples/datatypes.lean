@@ -16,7 +16,7 @@ infix `^` := npow
 
 section
 open tactic
-meta def rw' := rewrite_core transparency.semireducible ff ff occurrences.all ff
+meta def rw' := rewrite_core transparency.semireducible tt tt occurrences.all ff
 end
 
 @[simp] lemma rpow_zero (r : ℝ) : r^0 = 1 := rfl
@@ -54,3 +54,11 @@ do m ← mk_meta_var A,
 meta definition eq_by_simp (e1 e2 : expr) : tactic expr := 
 do gl ← mk_app `eq [e1, e2],
    mk_inhabitant_using gl simp <|> fail "unable to simplify"
+
+
+@[reducible]
+def {u} kth {α : Type u} [inhabited α] (l : list α) (i : ℕ) : α :=
+match l^.nth i with
+| some a := a
+| none   := default α
+end

@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Author: Robert Y. Lewis
 -/
 
-import ..data.list.basic .matrix ..algebra.order .comp_val ..data.fin ..data.int.basic init.meta.mathematica ..tools.auto.mk_inhabitant init.meta.smt.smt_tactic .and_of_map
+import ..data.list.basic .matrix ..algebra.order ..data.fin ..data.int.basic init.meta.mathematica init.meta.smt.smt_tactic .and_of_map ..mathematica_examples.comp_val
 open expr tactic rb_map
 
 def linarith_path := "~/lean/lean/extras/mathematica/linarith.m"
@@ -80,9 +80,6 @@ def bool_filter {α : Type} (P : α → bool) : list α → list α
 | []       := []
 | (h :: t) := if P h then h :: bool_filter t else bool_filter t
 
--- split a list of linear hypotheses into strict <, weak ≤, and eq =
-private meta def split_lin_hyps (l : list expr) : list expr × list expr × list expr :=
-⟨bool_filter (λ e, is_app_of e `lt) l, bool_filter (λ e, is_app_of e `le) l, bool_filter (λ e, is_app_of e `eq) l⟩
 
 private meta def sep_lin_hyp (e : expr) : expr × expr :=
 match get_app_args e with
@@ -197,20 +194,56 @@ meta def not_exists_of_linear_hyps (hyps : list name) : tactic unit := do
  conjpr ← fold_intros ```(trivial) expanded_proofs,
  apply conjpr
 
+/-
+returns (list of lt proof terms, list of lt types, list of le proof terms, list of le types, list of eq proof terms, list of eq types)
+-/
+private meta def split_lin_hyps : list expr → tactic (list expr × list expr × list expr × list expr × list expr × list expr)
+| [] := return ([], [], [], [], [], [])
+| (h::t) := 
+  do tp ← infer_type h,
+     (lt, ltts, le, lets, eq, eqts) ← split_lin_hyps t,
+     if is_app_of tp `lt then return (h::lt, tp::ltts, le, lets, eq, eqts) else
+     if is_app_of tp `le then return (lt, ltts, h::le, tp::ltts, eq, eqts) else
+     if is_app_of tp `eq then return (lt, ltts, le, lets, h::eq, tp::eqts) else
+     failed
+
+meta def create_flattened_farkas_pair (l vars : list expr) : tactic (expr × expr) :=
+do (mat, vec) ← create_farkas_matrix l vars,
+   mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
+   return (mat', vec')
+
+meta def mk_fin_form_mat (vars mat : expr) : tactic expr :=
+to_expr `(matrix_of_list_of_lists %%mat (length %%mat) (length %%vars))
+
+meta def mk_fin_form_vec (vec : expr) : tactic expr :=
+to_expr `(cvector_of_list %%vec)
+
 meta def not_exists_of_linear_hyps_gen (hyps : list name) : tactic unit := do
- lhyps ← monad.mapm get_local hyps,
- hyptps ← monad.mapm infer_type lhyps,
- let vars := keys (find_vars_in_comps hyptps),
- expanded_proofs ← monad.mapm (λ e, expand_ineq_proof e vars) lhyps,
+ (ltpfs, lttps, lepfs, letps, eqpfs, eqtps) ← monad.mapm get_local hyps >>= split_lin_hyps,
+-- lhyps ← monad.mapm get_local hyps,
+-- hyptps ← monad.mapm infer_type lhyps,
+ let hyptps := append (append lttps letps) eqtps,
+ (tp::_) ← get_app_args $ kth hyptps 0,
+ let vars := keys $ find_vars_in_comps hyptps,
+ [expltpfs, explepfs, expeqpfs] ← monad.mapm 
+   (λ l, monad.mapm (λ e, expand_ineq_proof e vars) l) 
+   [ltpfs, lepfs, eqpfs],
+-- expanded_proofs ← monad.mapm (λ e, expand_ineq_proof e vars) lhyps,
  varl ← flatten_expr_list vars,
- (mat, vec) ← create_farkas_matrix hyptps vars,
- mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
- fin_form_mat ← to_expr `(matrix_of_list_of_lists %%mat' (length %%mat') (length %%varl)),
+ [(ltmat, ltvec), (lemat, levec), (eqmat, eqvec)] ← monad.mapm (λ l, create_flattened_farkas_pair l vars) [lttps, letps, eqtps],
+-- (mat, vec) ← create_farkas_matrix hyptps vars,
+-- mat' ← flatten_matrix mat, vec' ← flatten_expr_list vec,
+ [finltmat, finlemat, fineqmat] ← monad.mapm (mk_fin_form_mat varl) [ltmat, lemat, eqmat],
+-- fin_form_mat ← to_expr `(matrix_of_list_of_lists %%mat' (length %%mat') (length %%varl)),
  varvec ← to_expr `(cvector_of_list %%varl),
- rhsvec ← to_expr `(cvector_of_list %%vec'),
- hyptps' ← flatten_expr_list hyptps,
- witnessp ← mathematica.run_command_on_using (λ s, s ++ " // LeanForm // Activate // FindFalseCoeffs")
-                                     hyptps' linarith_path,
+ [finltvec, finlevec, fineqvec] ← monad.mapm mk_fin_form_vec [ltvec, levec, eqvec],
+-- rhsvec ← to_expr `(cvector_of_list %%vec'),
+ [flttps, fletps, feqtps] ← monad.mapm flatten_expr_list [lttps, letps, eqtps],
+-- hyptps' ← flatten_expr_list hyptps,
+ witnessp ← mathematica.run_command_on_list_using (λ s, "Module[{hl:="++s++"}, With[{lts=hl[[1]] // LeanForm // Activate, les=hl[[2]] // LeanForm // Activate, eqs=hl[[3]] // LeanForm // Activate}, FindFalseCoeffs[lts, les, eqs]]]")
+                                     (append (append flttps fletps) feqtps) linarith_path,
+ witness_list ← to_expr `(%%witnessp : list (list int)),
+ [ltv, lev, eqv] ← eval_expr (list (list int)) witness_list,
  witness ← to_expr `(rvector_of_list (%%witnessp : list int)),
  zd ← to_expr `((dec_trivial : ∀ i, r_ith (%%witness ⬝ %%fin_form_mat) i = 0)), 
  comp_lhs ← to_expr `(c_dot ((%%witness)^Tr) %%rhsvec) >>= make_expr_into_sum,
